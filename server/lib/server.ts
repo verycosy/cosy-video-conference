@@ -1,4 +1,5 @@
-import { Router, Worker } from 'mediasoup/lib/types';
+import * as mediasoup from 'mediasoup';
+import { Producer, Transport } from 'mediasoup/lib/types';
 import { Server as SocketIO, Socket } from 'socket.io';
 import express, { Application } from 'express';
 import http, { Server } from 'http';
@@ -10,8 +11,9 @@ export class WebServer {
   private webServer: Server;
   private io: SocketIO;
 
-  private worker: Worker;
-  private router: Router;
+  private myWorker: MyWorker;
+  private producerTransport: Transport;
+  private producer: Producer;
 
   constructor(port = 5000) {
     this.port = port;
@@ -24,15 +26,49 @@ export class WebServer {
   private socketEvent = (socket: Socket) => {
     console.log('Client connected :)');
 
-    socket.on('getCapabilities', (data, cb) => {
-      cb(this.router.rtpCapabilities);
+    socket.on('getCapabilities', (data, callback) => {
+      callback(this.myWorker.router.rtpCapabilities);
+    });
+
+    socket.on('createProducerTransport', async (data, callback) => {
+      try {
+        const { transport, params } =
+          await this.myWorker.createWebRtcTransport();
+        this.producerTransport = transport;
+        callback(params);
+      } catch (err) {
+        console.error(err);
+        callback(err.message);
+      }
+    });
+
+    socket.on('connectProducerTransport', async (data, callback) => {
+      await this.producerTransport.connect({
+        dtlsParameters: data.dtlsParameters,
+      });
+      callback();
+    });
+
+    socket.on('produce', async (data, callback) => {
+      const { kind, rtpParameters } = data;
+      this.producer = await this.producerTransport.produce({
+        kind,
+        rtpParameters,
+      });
+      callback({ id: this.producer.id });
+
+      //TODO: broadcast
     });
   };
 
   run() {
     this.webServer.listen(this.port, async () => {
-      this.worker = await MyWorker.createWorker();
-      this.router = await MyWorker.createRouter(this.worker);
+      const mediaSoupWorker = await mediasoup.createWorker({
+        logLevel: 'warn',
+      });
+
+      this.myWorker = new MyWorker(mediaSoupWorker);
+      await this.myWorker.createRouter();
 
       console.log(`Server running on localhost:${this.port}`);
     });

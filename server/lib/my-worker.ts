@@ -1,7 +1,14 @@
-import { createWorker } from 'mediasoup';
-import { RtpCodecCapability, Worker } from 'mediasoup/lib/types';
+import { Router, RtpCodecCapability, Worker } from 'mediasoup/lib/types';
 
 export class MyWorker {
+  public router: Router;
+
+  constructor(private worker: Worker) {
+    this.worker.on('died', () => {
+      console.error(`Mediasoup workder pid#${worker.pid} died`);
+    });
+  }
+
   static mediaCodecs: RtpCodecCapability[] = [
     {
       kind: 'audio',
@@ -16,21 +23,29 @@ export class MyWorker {
     },
   ];
 
-  static async createWorker() {
-    const worker = await createWorker({
-      logLevel: 'warn',
-    });
-
-    worker.on('died', () => {
-      console.error(`Mediasoup workder pid#${worker.pid} died`);
-    });
-
-    return worker;
-  }
-
-  static async createRouter(worker: Worker) {
-    return await worker.createRouter({
+  async createRouter() {
+    this.router = await this.worker.createRouter({
       mediaCodecs: MyWorker.mediaCodecs,
     });
+  }
+
+  async createWebRtcTransport() {
+    const transport = await this.router.createWebRtcTransport({
+      listenIps: [{ ip: '127.0.0.1' }],
+      enableTcp: true,
+      enableUdp: true,
+      preferUdp: true,
+      initialAvailableOutgoingBitrate: 1000000,
+    });
+
+    return {
+      transport,
+      params: {
+        id: transport.id,
+        iceParameters: transport.iceParameters,
+        iceCandidates: transport.iceCandidates,
+        dtlsParameters: transport.dtlsParameters,
+      },
+    };
   }
 }

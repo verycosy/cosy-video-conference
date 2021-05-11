@@ -1,11 +1,28 @@
-import io from 'socket.io-client';
-import { RtpCapabilities } from 'mediasoup-client/lib/RtpParameters';
+import { RtpCapabilities } from 'mediasoup-client/lib/types';
+import { socket } from './lib/PromisifySocket';
+import {
+  createProducerTransport,
+  getWebCamTrack,
+  loadMyDevice,
+} from './lib/utils';
 
-const socket = io('http://localhost:5000', { transports: ['websocket'] });
+async function main() {
+  try {
+    const rtpCapabilties = await socket.request<RtpCapabilities>(
+      'getCapabilities'
+    );
+    const device = await loadMyDevice(rtpCapabilties);
+    const transport = await createProducerTransport(device);
 
-socket.emit('getCapabilities', {}, (data: RtpCapabilities) => {
-  console.log(data);
-});
+    const params = { track: await getWebCamTrack() };
+    const producer = await transport.produce(params);
+    console.log(producer);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+main();
 
 function App() {
   return <div>Hello, Mediasoup!</div>;
